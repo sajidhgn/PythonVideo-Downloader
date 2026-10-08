@@ -1,5 +1,6 @@
-"""Tracks media in memory: downloads and edits running in background threads,
-plus uploaded files. Every item has an id that works with /api/file."""
+"""Tracks media in memory: downloads, edits and Animate pipeline steps running
+in background threads, plus uploaded files. Every item has an id that works
+with /api/file."""
 
 import threading
 import uuid
@@ -34,6 +35,35 @@ def add_ready_file(job_id: str, path: Path, filename: str):
     """Register a file that already exists, such as an upload."""
     _jobs[job_id] = {"status": "done", "progress": 100, "speed": "", "eta": "",
                      "file": str(path), "filename": filename}
+
+
+def new_media_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def add_output(path: Path, filename: str, media_id: str | None = None) -> str:
+    """Register a file a task created, such as one clip of a split. Returns its media id."""
+    media_id = media_id or new_media_id()
+    add_ready_file(media_id, path, filename)
+    return media_id
+
+
+def start_task(work, *args) -> str:
+    """Run work(job, *args) in the background for steps that create several files.
+    work reports progress and stage on the job and stores its results there."""
+    job_id, job = _new_job()
+    job["status"] = "processing"
+    threading.Thread(target=_run_task, args=(job, work, args), daemon=True).start()
+    return job_id
+
+
+def _run_task(job: dict, work, args):
+    try:
+        work(job, *args)
+        job["progress"] = 100
+        job["status"] = "done"
+    except Exception as e:
+        _fail(job, e)
 
 
 def start_download(url: str, quality: str) -> str:
@@ -81,11 +111,17 @@ def start_edit(source_id: str, opts: editing.EditOptions, music_id: str | None =
 
     stem = editing.safe_filename(opts.filename, editing.safe_filename(Path(_jobs[source_id]["filename"]).stem, "edited"))
     filename = stem + editing.output_extension(info)
+    return start_render(filename, lambda out: editing.build_command(src, out, info, opts))
+
+
+def start_render(filename: str, build) -> str:
+    """Run one ffmpeg command that writes a new file in EDIT_DIR. build(out) returns
+    (command, output duration) and raises ServiceError for bad input, so that is a 400."""
     job_id, job = _new_job()
     out = EDIT_DIR / f"{job_id}_{filename}"
     try:
-        cmd, out_duration = editing.build_command(src, out, info, opts)
-    except base.ServiceError:
+        cmd, out_duration = build(out)
+    except Exception:
         del _jobs[job_id]
         raise
     job["status"] = "processing"
@@ -107,6 +143,10 @@ def _run_edit(job: dict, cmd: list[str], out_duration: float, out: Path, filenam
 
 def get_job(job_id: str):
     return _jobs.get(job_id)
+
+
+def filename_of(media_id: str) -> str:
+    return _jobs[media_id]["filename"]
 
 
 def public_view(job: dict) -> dict:

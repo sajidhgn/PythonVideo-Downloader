@@ -1,0 +1,12 @@
+# Secrets. The YouTube token can upload to your channel.
+.env
+backend/youtube_token.json
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Media the app creates
+backend/clips/
+backend/edited/

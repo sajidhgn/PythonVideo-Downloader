@@ -17,6 +17,9 @@ class MediaInfo:
     has_audio: bool
     fps: float | None = None
     metadata: dict | None = None
+    # Display size, after any rotation a phone recorded.
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass
@@ -35,7 +38,7 @@ class EditOptions:
     filename: str | None = None
 
 
-def _require_ffmpeg():
+def require_ffmpeg():
     if not FFMPEG_PATH:
         raise ServiceError("ffmpeg is not available on the backend")
 
@@ -56,7 +59,7 @@ def parse_metadata(ffmpeg_output: str) -> dict:
 
 def probe(path: Path) -> MediaInfo:
     """Read duration and stream types. Uses ffmpeg because the bundled build has no ffprobe."""
-    _require_ffmpeg()
+    require_ffmpeg()
     result = subprocess.run(
         [FFMPEG_PATH, "-hide_banner", "-i", str(path)],
         capture_output=True, text=True, errors="replace",
@@ -70,6 +73,10 @@ def probe(path: Path) -> MediaInfo:
     if not match or not (video_streams or has_audio):
         raise ServiceError("This file isn't a video or audio file ffmpeg can read")
     fps_match = re.search(r"(\d+(?:\.\d+)?) fps", video_streams[0]) if video_streams else None
+    size_match = re.search(r", (\d{2,5})x(\d{2,5})\b", video_streams[0]) if video_streams else None
+    width, height = (int(size_match.group(1)), int(size_match.group(2))) if size_match else (None, None)
+    if re.search(r"rotation of -?(90|270)\.", out):
+        width, height = height, width
     h, m, s = match.groups()
     return MediaInfo(
         duration=int(h) * 3600 + int(m) * 60 + float(s),
@@ -77,7 +84,22 @@ def probe(path: Path) -> MediaInfo:
         has_audio=has_audio,
         fps=float(fps_match.group(1)) if fps_match else None,
         metadata=parse_metadata(out),
+        width=width,
+        height=height,
     )
+
+
+def frame_jpeg(path: Path, t: float, width: int = 480) -> bytes:
+    """One frame at t seconds as a JPEG, for thumbnails and continuity checks."""
+    require_ffmpeg()
+    result = subprocess.run(
+        [FFMPEG_PATH, "-hide_banner", "-loglevel", "error", "-ss", f"{max(t, 0):.3f}", "-i", str(path),
+         "-frames:v", "1", "-vf", f"scale={width}:-2", "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "4", "pipe:1"],
+        capture_output=True,
+    )
+    if result.returncode != 0 or not result.stdout:
+        raise ServiceError("Couldn't read a frame at that time")
+    return result.stdout
 
 
 def safe_filename(name: str | None, fallback: str) -> str:
@@ -133,7 +155,7 @@ def output_extension(info: MediaInfo) -> str:
 
 def build_command(src: Path, out: Path, info: MediaInfo, opts: EditOptions) -> tuple[list[str], float]:
     """Return the ffmpeg command and the output duration in seconds."""
-    _require_ffmpeg()
+    require_ffmpeg()
     end = info.duration if opts.trim_end is None else opts.trim_end
     if not 0 <= opts.trim_start < end or end > info.duration + 0.5:
         raise ServiceError(f"Trim range must be within 0 and {info.duration:.1f} seconds")

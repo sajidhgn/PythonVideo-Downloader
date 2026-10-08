@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { getProgress, type Job } from "@/lib/api";
 
-/** Polls a download or edit job until it finishes. Returns null until the first update. */
-export function useJob(jobId: string | null): Job | null {
+/** Polls a job until it finishes. Returns null until the first update.
+ * onDone runs once when the job succeeds, for saving its results. */
+export function useJob(jobId: string | null, onDone?: (job: Job) => void): Job | null {
   const [state, setState] = useState<{ id: string; job: Job } | null>(null);
+  const handleDone = useEffectEvent((job: Job) => onDone?.(job));
 
   useEffect(() => {
     if (!jobId) return;
@@ -15,7 +17,11 @@ export function useJob(jobId: string | null): Job | null {
         const job = await getProgress(jobId);
         if (stopped) return;
         setState({ id: jobId, job });
-        if (job.status === "done" || job.status === "error") clearInterval(timer);
+        if (job.status === "done" || job.status === "error") {
+          clearInterval(timer);
+          stopped = true;
+          if (job.status === "done") handleDone(job);
+        }
       } catch (e) {
         clearInterval(timer);
         if (!stopped) {

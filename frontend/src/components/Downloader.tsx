@@ -16,7 +16,7 @@ const PLATFORM_NAMES: Record<string, string> = {
   Twitter: "X / Twitter",
 };
 
-export default function Downloader({ onEdit }: { onEdit: (source: EditSource) => void }) {
+export default function Downloader({ onEdit, onAnimate }: { onEdit: (source: EditSource) => void; onAnimate: (source: EditSource) => void }) {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,6 +221,14 @@ export default function Downloader({ onEdit }: { onEdit: (source: EditSource) =>
               >
                 Edit video
               </button>
+              {!/\.(mp3|m4a|opus|ogg|wav)$/i.test(job.filename ?? "") && (
+                <button
+                  onClick={() => onAnimate({ id: jobId, title: info.title })}
+                  className="flex-1 rounded-xl border border-zinc-200 px-4 py-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Animate
+                </button>
+              )}
             </div>
           )}
         </div>

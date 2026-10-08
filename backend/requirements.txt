@@ -3,3 +3,5 @@ uvicorn
 yt-dlp
 imageio-ffmpeg
 python-multipart
+# Runway and YouTube API calls in the Animate pipeline
+httpx

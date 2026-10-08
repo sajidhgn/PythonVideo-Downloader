@@ -2,15 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import FilePicker from "@/components/FilePicker";
+import { buttonClass, Card, Field, inputClass, Slider } from "@/components/ui";
 import { fileUrl, getMedia, startEdit, type EditSource, type MediaInfo } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
 import { useJob } from "@/lib/useJob";
 
 const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const inputClass =
-  "w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700";
-const buttonClass =
-  "rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
 type Props = {
   source: EditSource | null;
@@ -346,49 +343,6 @@ function EditForm({ media, fallbackTitle, onSourceChange }: { media: MediaInfo; 
           </div>
         )}
       </Card>
-    </div>
-  );
-}
-
-function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="truncate text-sm font-semibold">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs text-zinc-500">{label}</span>
-      {children}
-      {hint && <span className="text-xs text-zinc-400">{hint}</span>}
-    </label>
-  );
-}
-
-function Slider(props: { label: string; value: number; max: number; onChange: (v: number) => void; display: string }) {
-  return (
-    <div>
-      <div className="flex justify-between text-xs text-zinc-500">
-        <span>{props.label}</span>
-        <span>{props.display}</span>
-      </div>
-      <input
-        type="range"
-        min={0}
-        max={props.max}
-        step={0.05}
-        value={props.value}
-        onChange={(e) => props.onChange(Number(e.target.value))}
-        className="mt-1 w-full accent-indigo-600"
-        aria-label={props.label}
-      />
     </div>
   );
 }

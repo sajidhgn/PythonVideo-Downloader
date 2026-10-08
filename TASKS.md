@@ -1,6 +1,6 @@
 # Tasks
 
-Task list for the video app: a FastAPI + yt-dlp backend in `backend/` and a Next.js frontend in `frontend/`. The app downloads videos, edits them, and dubs them into Arabic in the speaker's own voice.
+Task list for the video app: a FastAPI + yt-dlp backend in `backend/` and a Next.js frontend in `frontend/`. The app downloads videos, edits them, dubs them into Arabic in the speaker's own voice, and turns owned or licensed footage into an animated video for YouTube (the Animate tab).
 
 ## Rules for Claude
 
@@ -44,11 +44,14 @@ Environment variables:
 | `OLLAMA_URL` | Ollama server | `http://127.0.0.1:11434` (new) |
 | `TRANSLATION_MODEL` | Ollama model for translation | `qwen3:8b` (new) |
 | `HF_TOKEN` | Hugging Face token, only for multi-speaker diarization | off (new) |
+| `RUNWAYML_API_SECRET` | Runway API key for AI styling in the Animate tab | off: only the offline preview look works |
+| `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | Google OAuth client ("Desktop app" type, YouTube Data API v3 enabled) for publishing | off: publishing shows setup steps |
+| `YOUTUBE_TOKEN_FILE` | Where the YouTube refresh token is saved. Never commit it. | `backend/youtube_token.json` |
 
 ## This machine (checked 2026-10-07)
 
 - Apple M4, 16 GB RAM, macOS 26.6.
-- **The disk is 99% full, with 3.6 GB free.** That's not enough for the AI work.
+- **The disk is 99% full, with 3.6 GB free.** That's not enough for the AI work. (2026-10-08: 35 GB free.)
 - There is no system ffmpeg. The backend uses the imageio-ffmpeg binary, which has no `ffprobe`.
 - The system Python is 3.9. uv and Homebrew are installed.
 - Ollama has `qwen3:8b` (5.2 GB) ready. It also has `qwen3.8:latest` (17 GB), `qwen2.5:7b` (4.7 GB) and `qwen2.5:3b` (1.9 GB).
@@ -75,6 +78,9 @@ These are already decided. Don't reopen them without a concrete reason.
 | Python | **3.11** through uv in `backend/.venv` | The system Python 3.9 is too old for PyTorch and Chatterbox. |
 | Later: speaker separation | pyannote `speaker-diarization-community-1` | Free, but needs a Hugging Face token. |
 | Later: model to compare | OmniVoice (k2-fsa, 600+ languages) | Test it against Chatterbox once its licence is confirmed. |
+| AI video styling (Animate) | **Runway API**: `aleph2` by default, `gemini_omni_flash` as the cheaper option. One fixed seed for every clip. An ffmpeg cartoon filter is a free offline preview, clearly labelled as not AI. | Aleph 2 restyles real footage and keeps motion and timing. It takes 2–30 s clips at up to 1080p and 30 fps, and accepts a seed. It costs 28 credits ($0.28) per second, with a 56-credit minimum. Picked on 2026-10-08 without asking the user, so confirm it. |
+| Publishing (Animate) | **YouTube Data API v3** resumable `videos.insert`. OAuth installed-app flow (PKCE, loopback redirect to the backend), `youtube.upload` scope only. | No Google client libraries needed. The refresh token is saved with 0600 permissions. Uploads default to private. |
+| HTTP client | **httpx** | Used for the Runway and YouTube calls. Already planned for the AI work. |
 
 ---
 
@@ -296,6 +302,15 @@ Pipeline (`backend/services/dubbing/`; each step is a job stage):
 - [ ] **Keep Ollama on localhost.** Never expose port 11434.
 - [ ] **Review ID strength.** A 12-character hex job ID is the only thing that protects `/api/file/{job_id}`, and media IDs will do the same for media files. That is fine on localhost, but review it before going public.
 
+## P1: Animate pipeline follow-ups
+
+- [ ] **Try Runway with a real key** on a short clip you own. Check the `aleph2` output's resolution, frame rate and audio, and compare the credits charged with the estimate in the UI.
+- [ ] **Do a real YouTube upload** (private) with an OAuth client. Check that the "made for kids" answer and the altered-content label show in YouTube Studio.
+- [ ] **Keep Animate projects across backend restarts.** The browser saves the project, but media ids live in the backend's memory, so a restart breaks every link. This depends on the media library task.
+- [ ] **Cancel a styling job** between clips, so a long Runway run can stop without paying for the rest. This depends on the cancel task.
+- [ ] **Keep characters consistent with a reference image.** Aleph 2 accepts up to 5 keyframe images. Test whether a styled frame of the main character, passed to every clip, keeps the character's look better than the shared seed alone.
+- [ ] **Connect to Google faster on networks with broken IPv6.** `www.googleapis.com` resolves to 8 IPv6 addresses before IPv4. Python tries them one at a time, so even with the 5 s connect timeout, the first connection can take about 40 s.
+
 ## P2: Dubbing improvements
 
 - [ ] **Multiple speakers.** Use pyannote `speaker-diarization-community-1` (needs `HF_TOKEN`) to label each line with its speaker. Each speaker then gets their own voice reference and pitch statistics.
@@ -327,6 +342,10 @@ There are no tests yet. Mark tests that need AI models with `@pytest.mark.ai`, a
   - render tests on a 5 s test clip made with `ffmpeg -f lavfi -i testsrc2=duration=5:size=1280x720:rate=30 -f lavfi -i sine=frequency=440:duration=5`, checking the output's duration, size and streams with ffprobe
 
   No copyrighted test media.
+- [ ] **Animate tests.** Golden tests for `scenes.plan_clips`, `combine.build_command` (cut, crossfade and fade through black, with and without audio) and `soundtrack.build_command`. Also a render test on the synthetic three-scene clip from the editor tests. Check:
+  - the output duration matches what the builder returns
+  - the video stream is unchanged after the soundtrack step (same `-f md5`)
+  - the mix lands near −14 LUFS
 - [ ] **Dubbing unit tests.** Cover:
   - grouping words into lines
   - the length budget
@@ -355,3 +374,5 @@ There are no tests yet. Mark tests that need AI models with `@pytest.mark.ai`, a
 ## Done
 
 <!-- Move finished tasks here as: - [x] YYYY-MM-DD: task (one-line note on what changed and how it was verified) -->
+
+- [x] 2026-10-08: **Animate tab**, the six-step pipeline: original video (rights check) → split into clips (scene detection, 2–30 s, at most 1080p and 30 fps) → AI styling (Runway, or the offline preview) → combine (reorder, cut, crossfade or fade through black, last and first frame of each join for continuity) → audio (narration, music that ducks under speech, −14 LUFS) → publish to YouTube (OAuth, made-for-kids answer, altered-content label, rights and monetization checklist). Verified on synthetic media: an API end-to-end script, then the full UI flow in headless Chrome. The combined length matches the transitions exactly, the soundtrack step copies the video stream unchanged (same md5), the mix measures −14.5 LUFS, and the music ducks about 8 dB. The upload error path was tested with a fake token. `npm run lint`, `tsc` and `npm run build` pass. Not tried with a real Runway key or a real YouTube upload; see the follow-ups.

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import Pipeline from "@/components/animate/Pipeline";
 import Downloader from "@/components/Downloader";
 import Editor from "@/components/Editor";
 import type { EditSource } from "@/lib/api";
@@ -8,6 +9,7 @@ import type { EditSource } from "@/lib/api";
 const TABS = [
   { id: "download", label: "Download" },
   { id: "edit", label: "Edit" },
+  { id: "animate", label: "Animate" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -15,6 +17,7 @@ type Tab = (typeof TABS)[number]["id"];
 export default function Studio() {
   const [tab, setTab] = useState<Tab>("download");
   const [editSource, setEditSource] = useState<EditSource | null>(null);
+  const [animateSource, setAnimateSource] = useState<EditSource | null>(null);
 
   return (
     <div className="w-full">
@@ -37,17 +40,27 @@ export default function Studio() {
         ))}
       </div>
 
-      {/* Both stay mounted so a running download isn't lost when switching tabs. */}
+      {/* All stay mounted so a running job isn't lost when switching tabs. */}
       <div hidden={tab !== "download"}>
         <Downloader
           onEdit={(source) => {
             setEditSource(source);
             setTab("edit");
           }}
+          onAnimate={(source) => {
+            setAnimateSource(source);
+            setTab("animate");
+          }}
         />
       </div>
       <div hidden={tab !== "edit"}>
         <Editor source={editSource} onSourceChange={setEditSource} />
+      </div>
+      <div hidden={tab !== "animate"}>
+        {/* The pipeline reads its saved project from the browser, so it renders only there. */}
+        <Suspense fallback={<p className="text-center text-sm text-zinc-500">Loading...</p>}>
+          <Pipeline incoming={animateSource} />
+        </Suspense>
       </div>
     </div>
   );
